@@ -2,30 +2,33 @@
   {
     "users": {
       "roles": ["developer"],
-      "projects": ["demo"]
+      "projects": ["demo"],
+      "domains": ["Default"]
     },
-    "resource_permissions": {
-      "!kube-system/!['namespaces', 'clusterrolebindings', 'clusterroles', 'podsecuritypolicies', 'rolebindings', 'roles', 'podSecurityPolicies']": ["*"],
-      "!kube-system/['namespaces', 'clusterrolebindings', 'clusterroles', 'podsecuritypolicies', 'rolebindings', 'roles', 'podSecurityPolicies']": ["get", "list"]
-    }
+    "resource_permissions": [
+      {"!kube-system/!['namespaces', 'clusterrolebindings', 'clusterroles', 'podsecuritypolicies', 'rolebindings', 'roles', 'podSecurityPolicies']/['*']": ["*"]},
+      {"!kube-system/['namespaces', 'clusterrolebindings', 'clusterroles', 'podsecuritypolicies', 'rolebindings', 'roles', 'podSecurityPolicies']/['*']": ["get", "list"]}
+    ]
   },
   {
     "users": {
       "roles": ["viewer"],
-      "projects": ["demo", "cd08a539b7c845ddb92c5d08752101d1"]
+      "projects": ["demo", "cd08a539b7c845ddb92c5d08752101d1"],
+      "domains": ["Default"]
     },
-    "resource_permissions": {
-      "default/['*']": ["get", "list"]
-    }
+    "resource_permissions": [
+      {"default/['*']/['*']": ["get", "list"]}
+    ]
   },
   {
     "users": {
       "roles": ["clusteradmin"],
-      "projects": ["demo"]
+      "projects": ["demo"],
+      "domains": ["Default"]
     },
-    "resource_permissions": {
-      "*/*": ["*"]
-    },
+    "resource_permissions": [
+      {"*/*/*": ["*"]}
+    ],
     "nonresource_permissions": {
       "/healthz": ["get", "post"]
     }

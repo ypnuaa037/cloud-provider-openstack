@@ -29,7 +29,7 @@ type policy struct {
 
 	Match []policyMatch `json:"match"`
 
-	ResourcePermissionsSpec map[string][]string `json:"resource_permissions,omitempty"`
+	ResourcePermissionsSpec []map[string][]string `json:"resource_permissions,omitempty"`
 
 	NonResourcePermissionsSpec map[string][]string `json:"nonresource_permissions,omitempty"`
 

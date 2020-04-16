@@ -281,6 +281,7 @@ func TestAuthorizerVersion2(t *testing.T) {
 		Extra: map[string][]string{
 			ProjectName: {"demo"},
 			Roles:       {"developer"},
+			DomainName:  {"Default"},
 		},
 	}
 	viewer := &user.DefaultInfo{
@@ -290,6 +291,7 @@ func TestAuthorizerVersion2(t *testing.T) {
 			ProjectName: {"demo"},
 			ProjectID:   {"ff9db8980cf24a74bc9dd796b6ce811f"},
 			Roles:       {"viewer"},
+			DomainName:  {"Default"},
 		},
 	}
 	anotherviewer := &user.DefaultInfo{
@@ -299,6 +301,7 @@ func TestAuthorizerVersion2(t *testing.T) {
 			ProjectName: {"alt_demo"},
 			ProjectID:   {"cd08a539b7c845ddb92c5d08752101d1"},
 			Roles:       {"viewer"},
+			DomainName:  {"Default"},
 		},
 	}
 	clusteradmin := &user.DefaultInfo{
@@ -307,6 +310,7 @@ func TestAuthorizerVersion2(t *testing.T) {
 		Extra: map[string][]string{
 			ProjectName: {"demo"},
 			Roles:       {"clusteradmin"},
+			DomainName:  {"Default"},
 		},
 	}
 
