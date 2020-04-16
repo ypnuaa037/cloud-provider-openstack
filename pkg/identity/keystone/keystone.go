@@ -570,7 +570,7 @@ func createKubernetesClient(kubeConfig string) (*kubernetes.Clientset, error) {
 func createKeystoneClient(authURL string, caFile string) (*gophercloud.ServiceClient, error) {
 	// FIXME: Enable this check later
 	//if !strings.HasPrefix(authURL, "https") {
-	//	return nil, errors.New("Auth URL should be secure and start with https")
+	//      return nil, errors.New("Auth URL should be secure and start with https")
 	//}
 	var transport http.RoundTripper
 	if authURL == "" {

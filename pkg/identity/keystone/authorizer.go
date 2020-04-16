@@ -98,46 +98,109 @@ func getAllowed(definition string, str string) (sets.String, error) {
 	return allowed, nil
 }
 
-func resourcePermissionAllowed(permissionSpec map[string][]string, attr authorizer.Attributes) bool {
+func resourcePermissionAllowed(permissionSpec []map[string][]string, attr authorizer.Attributes) bool {
 	ns := attr.GetNamespace()
 	res := attr.GetResource()
+	name := attr.GetName()
 	verb := attr.GetVerb()
-	klog.V(4).Infof("Request namespace: %s, resource: %s, verb: %s", ns, res, verb)
+	klog.V(4).Infof("Request namespace: %s, resource: %s, resourceName: %s, verb: %s", ns, res, name, verb)
 
-	for key, value := range permissionSpec {
-		klog.V(4).Infof("Evaluating %s: %s", key, value)
+	for _, permission := range permissionSpec {
+		for key, value := range permission {
+			klog.V(4).Infof("Evaluating %s: %s", key, value)
 
-		allowedVerbs := sets.NewString()
-		for _, val := range value {
-			allowedVerbs.Insert(strings.ToLower(val))
-		}
-		if allowedVerbs.Has("*") {
-			allowedVerbs.Insert(verb)
-		}
+			allowedVerbs := sets.NewString()
+			for _, val := range value {
+				allowedVerbs.Insert(strings.ToLower(val))
+			}
+			if allowedVerbs.Has("*") {
+				allowedVerbs.Insert(verb)
+			}
 
-		keyList := strings.Split(key, "/")
-		if len(keyList) != 2 {
-			// Ignore this spec
-			klog.V(4).Infof("Skip the permission definition %s", key)
-			continue
-		}
-		nsDef := strings.ToLower(strings.TrimSpace(keyList[0]))
-		resDef := strings.ToLower(strings.TrimSpace(keyList[1]))
+			keyList := strings.Split(key, "/")
+			// restrict the resource format as "NameSpace/Resource/ResourceName", for example, "default/storageClass/default"
+			if len(keyList) != 3 {
+				// Ignore this spec
+				klog.V(4).Infof("Skip the permission definition %s", key)
+				continue
+			}
+			nsDef := strings.ToLower(strings.TrimSpace(keyList[0]))
+			resDef := strings.ToLower(strings.TrimSpace(keyList[1]))
+			nameDef := strings.ToLower(strings.TrimSpace(keyList[2]))
 
-		allowedNamespaces, err := getAllowed(nsDef, ns)
-		if err != nil {
-			continue
-		}
+			// For those special resources defined in policy
+			// 1. if the policy has a specified name of a resource, and the name is equal to request resourceName, the request will be allowed.
+			// 2. if the policy specifies a resourceName is not allowed, the request will be denied if the name is equal to it.
+			// 3. if the policy specified a list of resourceName, and the request name is included, the request will be allowed.
+			// 4. if the policy specified a list of resourceName is not allowed, the request will only allow the supplementary set.
+			if resDef == res && ns == "" {
+				klog.V(4).Infof("The resource %s with resourceName %s has special rule.", res, name)
+				if nameDef == name {
+					return true
+				} else if strings.Index(nameDef, "!") == 0 && strings.Index(nameDef, "[") != 1 {
+					if nameDef[1:] == name {
+						return false
+					} else {
+						if allowedVerbs.Has(verb) {
+							return true
+						} else {
+							return false
+						}
+					}
+				} else if strings.Index(nameDef, "[") == 0 && strings.Index(nameDef, "]") == (len(nameDef)-1) {
+					var items []string
+					if  err := json.Unmarshal([]byte(strings.Replace(nameDef, "'", "\"", -1)), &items); err != nil {
+						klog.V(4).Infof("Skip the permission definition %s", nameDef)
+					}
+					for _, val := range items {
+						if val == "*" && allowedVerbs.Has(verb) {
+							return true
+						}
+						if val == name && allowedVerbs.Has(verb) {
+							return true
+						}
+					}
+					return false
+				} else if strings.Index(nameDef, "!") == 0 && strings.Index(nameDef, "[") == 1 && strings.Index(nameDef, "]") == (len(nameDef)-1) {
+					var items []string
+					if  err := json.Unmarshal([]byte(strings.Replace(nameDef[1:], "'", "\"", -1)), &items); err != nil {
+						klog.V(4).Infof("Skip the permission definition %s", nameDef)
+					}
+					for _, val := range items {
+						if val == name {
+							return false
+						}
+					}
+					if allowedVerbs.Has(verb) {
+						return true
+					} else {
+						return false
+					}
+				}
+				return false
+			}
 
-		allowedResources, err := getAllowed(resDef, res)
-		if err != nil {
-			continue
-		}
+			allowedNamespaces, err := getAllowed(nsDef, ns)
+			if err != nil {
+				continue
+			}
 
-		klog.V(4).Infof("allowedNamespaces: %s, allowedResources: %s, allowedVerbs: %s", allowedNamespaces.List(), allowedResources.List(), allowedVerbs.List())
+			allowedResources, err := getAllowed(resDef, res)
+			if err != nil {
+				continue
+			}
 
-		if allowedNamespaces.Has(ns) && allowedResources.Has(res) && allowedVerbs.Has(verb) {
-			return true
+			allowedNames, err := getAllowed(nameDef, name)
+			if err != nil {
+				continue
+			}
+
+			klog.V(4).Infof("allowedNamespaces: %s, allowedResources: %s, allowedResourceName: %s, allowedVerbs: %s",
+				allowedNamespaces.List(), allowedResources.List(), allowedNames.List(), allowedVerbs.List())
+
+			if allowedNamespaces.Has(ns) && allowedResources.Has(res) && allowedNames.Has(name) && allowedVerbs.Has(verb) {
+				return true
+			}
 		}
 	}
 
@@ -332,13 +395,27 @@ func (a *Authorizer) Authorize(attributes authorizer.Attributes) (authorized aut
 		}
 	}
 
-	klog.V(4).Infof("Request userRoles: %s, userProjects: %s", userRoles.List(), userProjects.List())
+	userDomains := sets.NewString()
+	if val, ok := user.GetExtra()[DomainName]; ok {
+		for _, domain := range val {
+			userDomains.Insert(domain)
+		}
+	}
+	if val, ok := user.GetExtra()[DomainID]; ok {
+		for _, domain := range val {
+			userDomains.Insert(domain)
+		}
+	}
+
+	klog.V(4).Infof("Request userRoles: %s, userProjects: %s, userDomains: %s",
+		userRoles.List(), userProjects.List(), userDomains.List())
 
 	// The permission is whitelist. Make sure we go through all the policies that match the user roles and projects. If
 	// the operation is allowed explicitly, stop the loop and return "allowed".
 	for _, p := range a.pl {
 		policyRoles := sets.NewString()
 		policyProjects := sets.NewString()
+		policyDomains := sets.NewString()
 
 		if p.Users != nil {
 			if val, ok := p.Users["roles"]; ok {
@@ -351,10 +428,17 @@ func (a *Authorizer) Authorize(attributes authorizer.Attributes) (authorized aut
 					policyProjects.Insert(project)
 				}
 			}
+			if val, ok := p.Users["domains"]; ok {
+				for _, domain := range val {
+					policyDomains.Insert(domain)
+				}
+			}
 
-			klog.V(4).Infof("policyRoles: %s, policyProjects: %s", policyRoles.List(), policyProjects.List())
+			klog.V(4).Infof("policyRoles: %s, policyProjects: %s, policyDomains: %s",
+				policyRoles.List(), policyProjects.List(), policyDomains.List())
 
-			if !userRoles.IsSuperset(policyRoles) || !policyProjects.HasAny(userProjects.List()...) {
+
+			if !userRoles.IsSuperset(policyRoles) || !policyProjects.HasAny(userProjects.List()...) || !policyDomains.HasAny(userDomains.List()...) {
 				continue
 			}
 		}
